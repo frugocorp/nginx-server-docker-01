@@ -1,0 +1,27 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # Un solo job -- este repo es un unico stack (nginx + certbot opcional), no una matriz de sitios
+  # como ngx-docs-markdown-kit. "up -d --build" alcanza: no hace falta "down" primero, nginx
+  # reprocesa los .template al arrancar, y un simple "up" no interrumpe el trafico si la imagen no
+  # cambio (Compose detecta que no hay diffs y no reinicia el contenedor).
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Redesplegar nginx-server-docker
+        run: |
+          ssh -p ${{ secrets.SSH_PORT || '22' }} -o StrictHostKeyChecking=accept-new \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            set -e
+            cd ~/nginx-server-docker
+            git pull origin main
+            docker compose up -d --build
+          EOF
