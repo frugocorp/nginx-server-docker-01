@@ -32,3 +32,4 @@ node_modules
 # "todo ignorado por default", agregar un sitio nuevo NUNCA lo expone sin querer.
 resources/templates/*
 !resources/templates/00-tuning.conf.template
+!resources/templates/00-default-catchall.conf.template
