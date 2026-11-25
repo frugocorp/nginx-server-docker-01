@@ -40,13 +40,24 @@ services:
       # access.log/error.log al host -- Fail2Ban corre en el HOST (nunca dentro de un contenedor),
       # sin este mount no puede ver nada de lo que nginx registra.
       - ./resources/logs:${NGINX_VOLUME_LOGS}
+
+      # Reto HTTP-01 de Let's Encrypt (solo lectura): certbot deja aqui los archivos temporales de
+      # validacion y nginx los publica en http://<dominio>/.well-known/acme-challenge/ (ver
+      # 00-default-catchall.conf.template y docs/example-site.conf.template). Carpeta vacia si el
+      # servidor solo usa certificados manuales o DNS-01.
+      - ./resources/acme-challenge:${NGINX_VOLUME_ACME_CHALLENGE}:ro
     networks:
       - edge-net
 
-  # Emite y renueva automaticamente certificados de Let's Encrypt via reto dns-01 contra la API de
-  # IONOS. Generico por dominio -- cada proyecto que use este mecanismo define su propio
-  # LETSENCRYPT_DOMAIN/carpeta de destino (ver .env.template); si en el futuro hace falta otro
-  # proveedor DNS, este servicio es el unico lugar que cambiaria (plugin de certbot distinto).
+  # Emite y renueva automaticamente certificados de Let's Encrypt. Un solo servicio para los dos
+  # retos, porque el reto NO es del servidor sino de cada certificado: se elige al emitirlo y certbot
+  # lo guarda en resources/ssl/renewal/<cert-name>.conf, de donde lo toma en cada renovacion.
+  #   - DNS-01 contra la API de IONOS (unico que permite comodines): necesita la credencial de
+  #     IONOS, que se monta solo si NGINX_CERTBOT_IONOS_CREDENTIALS apunta a ella en .env.
+  #   - HTTP-01 por webroot: sin credenciales; Let's Encrypt entra por el puerto 80 al propio
+  #     servidor. Es el reto de los servidores que no deben tener la credencial de IONOS.
+  # Si en el futuro hace falta otro proveedor DNS, cambian el plugin (certbot/Dockerfile) y la
+  # credencial montada; nada mas.
   certbot:
     # Con "profiles", este servicio NO se levanta con un "docker compose up" normal -- solo
     # cuando el perfil "letsencrypt" esta activo (COMPOSE_PROFILES=letsencrypt en .env). Dejalo
@@ -56,8 +67,9 @@ services:
     build:
       context: ./certbot
     restart: unless-stopped
-    # Loop de renovacion (uso normal): "certbot renew" no hace nada si al certificado le faltan
-    # mas de 30 dias para expirar (los de Let's Encrypt duran 90) -- correrlo seguido es seguro.
+    # Loop de renovacion (uso normal): "certbot renew" solo renueva los certificados que ya estan
+    # cerca de vencer (sin importar cuanto duren; Let's Encrypt va reduciendo la vigencia) y no
+    # hace nada con los demas -- correrlo cada 12 horas es seguro.
     # Para la emision inicial (una sola vez, manual) este entrypoint se sobreescribe explicitamente
     # -- ver README.md ("docker compose run --entrypoint certbot certbot certonly ...").
     entrypoint:
@@ -72,8 +84,14 @@ services:
       # Bind mount (no volumen nombrado) a proposito: los .pem/.key generados quedan visibles
       # directamente en el filesystem real, igual que los certificados manuales.
       - ./resources/ssl:/etc/letsencrypt
-      # Nunca commiteado (.gitignore) -- credencial real de la API de IONOS.
-      - ./certbot/ionos.ini:/etc/letsencrypt/ionos.ini:ro
+      # Carpeta del reto HTTP-01, la misma que nginx publica (con escritura aqui).
+      - ./resources/acme-challenge:${NGINX_VOLUME_ACME_CHALLENGE}
+      # Credencial de IONOS para DNS-01: bind mount del archivo que YA existe en este servidor (no
+      # se copia a la imagen ni viaja con git: certbot/ionos.ini esta en .gitignore). Si
+      # NGINX_CERTBOT_IONOS_CREDENTIALS va vacia en .env (servidores sin DNS-01), se monta en su
+      # lugar certbot/no-ionos-credentials.ini, versionado y vacio, para que Docker no invente una
+      # carpeta "ionos.ini" y en ese servidor no exista ninguna credencial.
+      - ${NGINX_CERTBOT_IONOS_CREDENTIALS:-./certbot/no-ionos-credentials.ini}:/etc/letsencrypt/ionos.ini:ro
     networks:
       - edge-net
 

@@ -82,19 +82,24 @@ levantado (devuelve 502 hasta que exista), y recoge sola una IP nueva si el cont
 
 ## Certificado
 
-Dos mecanismos soportados, elegí el que corresponda por proyecto:
+Tres mecanismos soportados. Se elige **por certificado**, no por servidor: en un mismo servidor
+pueden convivir certificados manuales, por DNS-01 y por HTTP-01, y certbot recuerda el reto de
+cada uno (`resources/ssl/renewal/<cert-name>.conf`) para renovarlo igual.
 
 - **Opción A — manual**: copiar la carpeta del certificado (hoja + cadena intermedia concatenadas,
   más la key) a `resources/ssl/<Carpeta>/` y referenciarla desde el bloque `APP_<SLUG>_*` en
   `.env`. `COMPOSE_PROFILES` queda vacío — el servicio `certbot` ni se levanta.
-- **Opción B — Let's Encrypt automático (dns-01 vía IONOS)**: `COMPOSE_PROFILES=letsencrypt` +
-  completar `LETSENCRYPT_DOMAIN`/`LETSENCRYPT_EMAIL` en `.env` + `certbot/ionos.ini` (copiar de
-  `ionos.ini.template`, credencial real de la API de IONOS — nunca se commitea). Emisión inicial
+- **Opción B — Let's Encrypt automático (dns-01 vía IONOS)**, el único que permite comodines:
+  `COMPOSE_PROFILES=letsencrypt` y `NGINX_CERTBOT_IONOS_CREDENTIALS=./certbot/ionos.ini` en el
+  bloque `NGINX` de `.env` + `certbot/ionos.ini` (copiar de
+  `ionos.ini.template`, credencial real de la API de IONOS — nunca se commitea). La credencial
+  controla **toda** la zona DNS de la cuenta: solo va en servidores propios. Emisión inicial
   (una sola vez, manual):
   ```bash
   cp certbot/ionos.ini.template certbot/ionos.ini   # completar con la API key real
   docker compose run --rm --entrypoint certbot certbot certonly \
-    --dns-ionos --dns-ionos-credentials /etc/letsencrypt/ionos.ini \
+    --authenticator dns-ionos --dns-ionos-credentials /etc/letsencrypt/ionos.ini \
+    --dns-ionos-propagation-seconds 120 \
     -d TU_DOMINIO -d "*.TU_DOMINIO" --email TU_CORREO --agree-tos --non-interactive
   docker compose up -d
   ```
@@ -102,7 +107,29 @@ Dos mecanismos soportados, elegí el que corresponda por proyecto:
   esa ruta desde el bloque `APP_<SLUG>_*` del proyecto que la use. **nginx no relee el certificado
   solo tras una renovación** — necesita `docker compose exec nginx nginx -s reload` para tomar el
   archivo nuevo (no se automatiza vía socket de Docker a propósito, evita darle a este contenedor
-  más privilegios de los que necesita).
+  más privilegios de los que necesita); un cron semanal en el host lo resuelve:
+  `0 4 * * 1 docker exec edge-nginx nginx -s reload`.
+- **Opción C — Let's Encrypt automático (http-01 por webroot)**, sin credenciales: Let's Encrypt
+  entra por el puerto 80 al propio servidor. Es el reto de un servidor que no debe tener la
+  credencial de IONOS (por ejemplo, el de un cliente). Requiere el registro A del subdominio ya
+  apuntando a este servidor y el puerto 80 abierto. `COMPOSE_PROFILES=letsencrypt` y
+  `NGINX_CERTBOT_IONOS_CREDENTIALS` **vacía** en `.env` (se monta en su lugar
+  `certbot/no-ionos-credentials.ini`, vacío). Sin comodines: un certificado por subdominio.
+  1. Con nginx arriba y **sin** la plantilla del sitio (nginx no arranca con una plantilla sin su
+     certificado), emitir; la validación la atiende `00-default-catchall`:
+     ```bash
+     docker compose run --rm --entrypoint certbot certbot certonly \
+       --webroot -w /var/www/acme-challenge \
+       --cert-name sub.TU_DOMINIO -d sub.TU_DOMINIO --email TU_CORREO --agree-tos --non-interactive
+     docker compose up -d
+     ```
+  2. Copiar la plantilla del sitio (su server del puerto 80 publica `/.well-known/acme-challenge/`
+     antes del 301, para las renovaciones; ver `docs/example-site.conf.template`), validar con
+     `docker compose run --rm --no-deps nginx nginx -t` y recrear con
+     `docker compose up -d --force-recreate nginx`.
+
+  Para probar la renovación sin gastar el límite de Let's Encrypt:
+  `docker compose run --rm --entrypoint certbot certbot renew --dry-run`.
 
 ## Fail2Ban
 

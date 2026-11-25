@@ -29,7 +29,16 @@ server {
     server_name ${APP_SLUG_MAY_SERVER_NAME};
     listen     ${NGINX_PORT_CONTAINER};
     server_tokens off;
-    return     301 https://$host$request_uri;
+
+    # Reto HTTP-01 de Let's Encrypt (renovaciones de un certificado emitido por HTTP-01). Va antes
+    # del 301: Let's Encrypt valida por el puerto 80. Inofensivo si el certificado es manual o DNS-01.
+    location ^~ /.well-known/acme-challenge/ {
+        root ${NGINX_VOLUME_ACME_CHALLENGE};
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
