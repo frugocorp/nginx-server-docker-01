@@ -22,8 +22,11 @@ jobs:
             # Valida la configuracion nueva (compose, plantillas y .env de este servidor) en un
             # contenedor aparte ANTES de tocar el nginx que esta corriendo: si falla, "set -e" corta
             # aqui y el nginx actual sigue atendiendo con su configuracion anterior.
+            # -T y < /dev/null son obligatorios: estos comandos llegan por la entrada estandar del ssh
+            # (heredoc), y sin ellos "docker compose run" se traga las lineas que siguen y "up" y
+            # "restart" nunca se ejecutan, aunque el job termine en verde.
             docker compose build
-            docker compose run --rm --no-deps nginx nginx -t
+            docker compose run --rm --no-deps -T nginx nginx -t < /dev/null
             docker compose up -d --build
             docker compose restart nginx
           EOF
