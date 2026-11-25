@@ -9,7 +9,19 @@
 server {
     listen      ${NGINX_PORT_CONTAINER} default_server;
     server_name _;
-    return      444;
+    server_tokens off;
+
+    # Reto HTTP-01 de Let's Encrypt en la PRIMERA emision de un subdominio: su .conf.template todavia
+    # no existe (nginx no arranca con una plantilla sin su certificado), asi que la peticion de
+    # validacion llega aqui. Solo publica los archivos temporales que certbot deja en la carpeta
+    # compartida; las renovaciones las atiende el server del puerto 80 de cada sitio.
+    location ^~ /.well-known/acme-challenge/ {
+        root ${NGINX_VOLUME_ACME_CHALLENGE};
+    }
+
+    location / {
+        return 444;
+    }
 }
 
 server {

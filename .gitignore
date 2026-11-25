@@ -13,6 +13,13 @@ resources/ssl/*/
 
 # Credencial real de la API de IONOS (certbot-dns-ionos) -- tan sensible como una contrasena.
 certbot/ionos.ini
+# Punto de montaje vacio que crea Docker: certbot monta la credencial en /etc/letsencrypt/ionos.ini y
+# /etc/letsencrypt es resources/ssl/. Se ignora igual, por si alguien deja ahi la credencial real.
+resources/ssl/ionos.ini
+
+# Archivos temporales del reto HTTP-01 de Let's Encrypt (certbot los crea y los borra al validar).
+resources/acme-challenge/*
+!resources/acme-challenge/.gitkeep
 
 # access.log/error.log montados desde nginx para Fail2Ban -- no aportan nada versionados y pueden
 # crecer sin limite.
