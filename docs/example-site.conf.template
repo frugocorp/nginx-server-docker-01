@@ -54,8 +54,7 @@ server {
     ssl_ecdh_curve            secp384r1;
     ssl_session_cache         shared:SSL:10m;
     ssl_session_tickets       off;
-    ssl_stapling              on; #ensure your cert is capable
-    ssl_stapling_verify       on; #ensure your cert is capable
+    # Sin ssl_stapling: Let's Encrypt dejo de dar respuestas OCSP y nginx solo dejaria avisos en el log.
     ssl_trusted_certificate   ${APP_SLUG_MAY_VOLUME_SSL}/${APP_SLUG_MAY_SSL_TRUSTED_CHAIN_INTERMEDIATE};
 
     add_header Strict-Transport-Security "max-age=63072000; includeSubdomains" always;
